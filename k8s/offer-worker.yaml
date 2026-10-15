@@ -1,0 +1,21 @@
+# The Temporal worker has no inbound traffic: no Service, no HTTP probes. Scale replicas for throughput;
+# Temporal distributes workflow/activity tasks across all workers polling the "offers" task queue.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: offer-worker, namespace: hearth }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: offer-worker } }
+  template:
+    metadata: { labels: { app: offer-worker } }
+    spec:
+      terminationGracePeriodSeconds: 60     # let in-flight activities finish on deploy
+      containers:
+        - name: worker
+          image: hearth/offer-worker:dev
+          imagePullPolicy: IfNotPresent
+          env: [{ name: TEMPORAL_ADDRESS, value: "temporal-frontend.temporal.svc.cluster.local:7233" }]
+          resources:
+            requests: { cpu: 50m, memory: 48Mi }
+            limits: { memory: 192Mi }
+          securityContext: { runAsNonRoot: true, readOnlyRootFilesystem: true, allowPrivilegeEscalation: false }

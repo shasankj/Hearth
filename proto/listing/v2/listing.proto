@@ -1,0 +1,97 @@
+syntax = "proto3";
+package hearth.listing.v2;
+option go_package = "github.com/you/hearth/gen/listingv2;listingv2";
+
+message Agent {
+  string id = 1;
+  string name = 2;
+  string brokerage = 3;
+  string phone = 4;
+  string email = 5;
+  string bio = 6;
+  double rating = 7;
+  int32 sales = 8;
+}
+
+message PricePoint {
+  string date = 1;      // YYYY-MM-DD
+  int64 price_usd = 2;
+  string event = 3;     // listed | price_change | pending | sold | rented
+}
+
+message Listing {
+  string id = 1;
+  string status = 2;           // for_sale | for_rent | pending | sold
+  string property_type = 3;    // house | condo | townhouse | multi_family | land
+  string address = 4;
+  string city = 5;
+  string state = 6;
+  string zip = 7;
+  string neighborhood = 8;
+  double lat = 9;
+  double lng = 10;
+  int64 price_usd = 11;        // sale price, or monthly rent for for_rent
+  int32 beds = 12;
+  double baths = 13;
+  int32 sqft = 14;
+  int32 lot_sqft = 15;
+  int32 year_built = 16;
+  int32 hoa_monthly = 17;
+  string description = 18;
+  repeated string features = 19;
+  repeated string photos = 20;
+  string listed_at = 21;       // RFC 3339
+  string open_house_at = 22;   // RFC 3339, empty if none
+  int64 previous_price_usd = 23;  // 0 if the price never changed
+  int32 days_on_market = 24;
+  Agent agent = 25;                       // detail view only
+  repeated PricePoint price_history = 26; // detail view only
+}
+
+message Bounds { double north = 1; double south = 2; double east = 3; double west = 4; }
+
+message SearchRequest {
+  string q = 1;                          // free text
+  string status = 2;                     // default for_sale
+  repeated string property_types = 3;
+  string city = 4;
+  int64 min_price_usd = 5;
+  int64 max_price_usd = 6;
+  int32 min_beds = 7;
+  double min_baths = 8;
+  int32 min_sqft = 9;
+  int32 max_sqft = 10;
+  int32 min_year_built = 11;
+  repeated string features = 12;         // listing must have ALL of these
+  Bounds bounds = 13;                    // map viewport
+  bool open_house_only = 14;
+  string sort = 15;                      // newest | price_asc | price_desc | beds_desc | sqft_desc
+  int32 page = 16;                       // 1-based
+  int32 page_size = 17;                  // default 12, max 48
+}
+
+message SearchResponse { repeated Listing listings = 1; int32 total = 2; int32 page = 3; int32 page_size = 4; }
+message GetListingRequest { string id = 1; }
+message GetListingsRequest { repeated string ids = 1; }
+message SimilarRequest { string id = 1; int32 limit = 2; }
+message ListingsResponse { repeated Listing listings = 1; }
+
+message MarketRequest { string status = 1; }
+message CityStat {
+  string city = 1;
+  int32 listings = 2;
+  int64 median_price_usd = 3;
+  int64 avg_price_usd = 4;
+  double avg_price_per_sqft = 5;
+  double avg_days_on_market = 6;
+}
+message MarketResponse { repeated CityStat cities = 1; }
+
+service ListingService {
+  rpc GetListing(GetListingRequest) returns (Listing);                  // with agent + price history
+  rpc GetListings(GetListingsRequest) returns (ListingsResponse);       // batch (favorites)
+  rpc SearchListings(SearchRequest) returns (SearchResponse);
+  rpc SimilarListings(SimilarRequest) returns (ListingsResponse);
+  rpc MarketStats(MarketRequest) returns (MarketResponse);
+  rpc StreamListings(SearchRequest) returns (stream Listing);           // server streaming (bulk export)
+}

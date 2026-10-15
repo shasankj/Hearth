@@ -1,0 +1,61 @@
+# docker compose up --build   ->  http://localhost:8080/api/listings   (HAProxy stats: :8404)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: hearth, POSTGRES_PASSWORD: hearth, POSTGRES_DB: hearth }
+    ports: ["5432:5432"]                       # connect TablePlus here
+    volumes:
+      - pgdata:/var/lib/postgresql/data                              # survives container recreation
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro              # 001_schema.sql + 002_seed.sql run on FIRST start only
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U hearth"], interval: 3s, retries: 10 }
+
+  listing:
+    build: { context: ., dockerfile: services/go.Dockerfile, args: { PKG: ./services/listing } }
+    # Point DATABASE_URL at AWS RDS to use it instead (add ?sslmode=require). See README "Using AWS RDS".
+    environment: { DATABASE_URL: "postgres://hearth:hearth@postgres:5432/hearth?sslmode=disable" }
+    depends_on: { postgres: { condition: service_healthy } }
+    ports: ["50051:50051"]
+
+  pricing:
+    build: { context: ., dockerfile: services/go.Dockerfile, args: { PKG: ./services/pricing } }
+    ports: ["9090:9090"]
+
+  inspection:
+    build: { context: ., dockerfile: services/inspection/Dockerfile }
+    environment:
+      JDBC_URL: jdbc:postgresql://postgres:5432/hearth
+      DB_USER: hearth
+      DB_PASSWORD: hearth
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api1: &api
+    build: { context: ., dockerfile: services/api/Dockerfile }
+    environment:
+      LISTING_ADDR: "listing:50051"
+      DATABASE_URL: "postgres://hearth:hearth@postgres:5432/hearth"
+      INSPECTION_URL: "http://inspection:8081"
+      TEMPORAL_ADDRESS: "temporal:7233"
+      JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"   # set a real secret outside local dev
+      TRUST_PROXY: "true"                                       # behind HAProxy: trust X-Forwarded-For
+    depends_on: { listing: { condition: service_started }, postgres: { condition: service_healthy } }
+  api2: *api
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    ports: ["8080:8080", "8404:8404"]
+    volumes: ["./infra/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"]
+    depends_on: [api1, api2, inspection]
+
+  temporal:
+    image: temporalio/temporal:latest
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports: ["7233:7233", "8233:8233"]          # 8233 = Temporal Web UI
+
+  offer-worker:
+    build: { context: ., dockerfile: services/go.Dockerfile, args: { PKG: ./services/offer/cmd/worker } }
+    environment: { TEMPORAL_ADDRESS: "temporal:7233" }
+    depends_on: [temporal]
+    restart: on-failure          # depends_on only orders start; retry until Temporal is actually ready
+
+volumes:
+  pgdata:

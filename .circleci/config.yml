@@ -1,0 +1,63 @@
+version: 2.1
+
+orbs:
+  node: circleci/node@6          # orb = reusable packaged config (jobs, commands, executors)
+
+# Reusable snippets (YAML anchors/commands keep jobs DRY)
+commands:
+  restore-go:
+    steps:
+      - restore_cache: { keys: ["go-{{ checksum \"go.sum\" }}"] }   # cache key changes only when deps change
+  save-go:
+    steps:
+      - save_cache: { key: "go-{{ checksum \"go.sum\" }}", paths: [/home/circleci/go/pkg/mod] }
+
+jobs:
+  go-test:
+    docker: [{ image: cimg/go:1.27 }]
+    steps:
+      - checkout
+      - restore-go
+      - run: go vet ./services/...
+      - run: go test -race -cover ./services/...    # -race catches data races
+      - save-go
+  api-test:
+    docker: [{ image: cimg/node:24.0 }]
+    steps:
+      - checkout
+      - node/install-packages: { app-dir: services/api }
+      - run: { command: npm test, working_directory: services/api }
+  agent-test:
+    docker: [{ image: cimg/python:3.13 }]
+    steps:
+      - checkout
+      - run: { command: python -m unittest discover -s tests, working_directory: services/agent, environment: { PYTHONPATH: . } }
+      - run: python -m unittest discover -s airflow/tests
+  java-test:
+    docker: [{ image: cimg/openjdk:21.0 }]
+    steps:
+      - checkout
+      - run: javac -d /tmp/out $(find services/inspection -name '*.java') && java -ea -cp /tmp/out com.hearth.inspection.InspectionTest
+  e2e:
+    docker: [{ image: cypress/browsers:latest }]
+    steps:
+      - checkout
+      - node/install-packages: { app-dir: web }
+      - run: cd web && (npx vite --port 5173 &) && npx wait-on http://localhost:5173 && npx cypress run
+  docker-build:
+    machine: { image: ubuntu-2404:current }
+    steps:
+      - checkout
+      - run: docker compose build
+
+workflows:
+  ci:
+    jobs:
+      - go-test
+      - api-test
+      - agent-test
+      - java-test
+      - e2e
+      - docker-build:
+          requires: [go-test, api-test, agent-test, java-test]   # only build images if tests pass
+          filters: { branches: { only: main } }

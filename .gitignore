@@ -1,0 +1,7 @@
+node_modules/
+web/dist/
+web/cypress/screenshots/
+**/.terraform/
+*.tfstate*
+__pycache__/
+learn/

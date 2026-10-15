@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: inspection, namespace: hearth }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: inspection } }
+  strategy: { rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }
+  template:
+    metadata: { labels: { app: inspection } }
+    spec:
+      containers:
+        - name: inspection
+          image: hearth/inspection:dev
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8081 }]
+          env:
+            - { name: JDBC_URL, valueFrom: { secretKeyRef: { name: hearth-secrets, key: JDBC_URL } } }
+            - { name: DB_USER, valueFrom: { secretKeyRef: { name: hearth-secrets, key: DB_USER } } }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: hearth-secrets, key: DB_PASSWORD } } }
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 384Mi }                     # JVM heap + metaspace need headroom
+          readinessProbe: { httpGet: { path: /healthz, port: 8081 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: 8081 }, initialDelaySeconds: 20 }
+          securityContext: { runAsNonRoot: true, runAsUser: 65534, allowPrivilegeEscalation: false }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: inspection, namespace: hearth }
+spec:
+  selector: { app: inspection }
+  ports: [{ port: 8081 }]

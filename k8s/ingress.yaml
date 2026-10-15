@@ -1,0 +1,10 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: hearth, namespace: hearth }
+spec:
+  ingressClassName: nginx     # requires an ingress controller (ingress-nginx) in the cluster
+  rules:
+    - host: hearth.local
+      http:
+        paths:
+          - { path: /api, pathType: Prefix, backend: { service: { name: api, port: { number: 80 } } } }

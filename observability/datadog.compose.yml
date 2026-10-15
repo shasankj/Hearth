@@ -1,0 +1,16 @@
+# Optional: docker compose -f docker-compose.yml -f observability/datadog.compose.yml up
+# Needs a Datadog API key (14-day free trial). NOT verified here: no key was available.
+services:
+  datadog:
+    image: gcr.io/datadoghq/agent:7
+    environment:
+      DD_API_KEY: ${DD_API_KEY:?set DD_API_KEY}
+      DD_SITE: datadoghq.com
+      DD_APM_ENABLED: "true"            # receive traces on :8126
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"   # receive custom metrics on UDP :8125
+      DD_LOGS_ENABLED: "true"
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "true"
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+  api1: &dd
+    environment: { DD_AGENT_HOST: datadog, DD_SERVICE: hearth-api, DD_ENV: local, NODE_OPTIONS: "--require dd-trace/init" }
+  api2: *dd
